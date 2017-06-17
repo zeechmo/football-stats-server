@@ -1,0 +1,23 @@
+{
+  "name": "football-stats-server",
+  "version": "1.0.0",
+  "description": "",
+  "main": "server.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/zeechmo/football-stats-server.git"
+  },
+  "author": "zeechmo",
+  "license": "ISC",
+  "bugs": {
+    "url": "https://github.com/zeechmo/football-stats-server/issues"
+  },
+  "homepage": "https://github.com/zeechmo/football-stats-server#readme",
+  "dependencies": {
+    "express": "^4.15.3",
+    "mysql": "^2.13.0"
+  }
+}
