@@ -17,7 +17,9 @@
   },
   "homepage": "https://github.com/zeechmo/football-stats-server#readme",
   "dependencies": {
+    "cors": "^2.8.3",
     "express": "^4.15.3",
-    "mysql": "^2.13.0"
+    "mysql": "^2.13.0",
+    "underscore": "^1.8.3"
   }
 }
