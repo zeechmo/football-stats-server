@@ -10,14 +10,53 @@ const app = express()
 
 app.use(cors())
 
-app.get('/getstats', function(request, response) {
-	
-	let year = 2016;
-	if (!!request.query.year) {
-		year = parseInt(request.query.year, 10);
-		console.log(year);
-	}
-		
+//
+// db queries
+//
+function doGetSchedulesAndWins(conn, year) {
+	var deferred = Q.defer();
+	conn.query("select count(1) as wins, refName from schedules where year = " + year + " and pointsFor > pointsAgainst group by refName;",deferred.makeNodeResolver());
+	return deferred.promise;
+}
+
+function doGetLosses(conn, year) {
+	var deferred = Q.defer();
+	conn.query("select count(1) as losses, refName from schedules where year = " + year + " and pointsFor < pointsAgainst group by refName;",deferred.makeNodeResolver());
+	return deferred.promise;
+}
+
+function doGetSchoolInfo(conn, year) {
+	var deferred = Q.defer();
+	conn.query("select distinct s.refName, sc.displayName from schedules s inner join schools sc on s.refName = sc.refName where year = " + year + " order by refName;",deferred.makeNodeResolver());
+	return deferred.promise;
+}
+
+function doGetOffensiveStats(conn, year) {
+	var deferred = Q.defer();
+	conn.query("(select schoolRefName, 'pass' as stat, SUM(passYards) yards, SUM(passAttempts) attempts, SUM(passCompletions) completions, COUNT(distinct s.gameId) games from passing p inner join schedules s on p.gameId = s.gameId where year = " + year + " and s.refName = p.schoolRefName group by schoolRefName) union all (select schoolRefName, 'rush' as stat, SUM(rushYards) yards, SUM(rushAttempts) attempts, 1 as completions, COUNT(distinct s2.gameId) games from rushingreceiving r inner join schedules s2 on r.gameId = s2.gameId where year = " + year + " and s2.refName = r.schoolRefName group by schoolRefName);",deferred.makeNodeResolver());
+	return deferred.promise;
+}
+
+function doGetDefensiveStats(conn, year) {
+	var deferred = Q.defer();
+	conn.query("(select opponentRefName as schoolRefName, 'pass' as stat, SUM(passYards) yards, SUM(passAttempts) attempts, SUM(passCompletions) completions, COUNT(distinct s.gameId) games from passing p inner join schedules s on p.gameId = s.gameId where year = " + year + " and s.refName = p.schoolRefName group by opponentRefName) union all (select opponentRefName as schoolRefName, 'rush' as stat, SUM(rushYards) yards, SUM(rushAttempts) attempts, 1 as completions, COUNT(distinct s2.gameId) games from rushingreceiving r inner join schedules s2 on r.gameId = s2.gameId where year = " + year + " and s2.refName = r.schoolRefName group by opponentRefName);",deferred.makeNodeResolver());
+	return deferred.promise;
+}
+
+function doGetAdjustedStats(conn, year) {
+	var deferred = Q.defer();
+	conn.query("select * FROM adjusted WHERE (schoolRefName, year,statName, date) IN ( SELECT schoolRefName, year, statName, MAX(date) FROM adjusted where year = " + year + " group by schoolRefName, year, statName);",deferred.makeNodeResolver());
+	return deferred.promise;
+}
+
+function doGetPoints(conn, year) {
+	var deferred = Q.defer();
+	conn.query("select avg(pointsFor) as pointsFor, avg(pointsAgainst) as pointsAgainst, refName from schedules where year = " + year + " group by refName;",deferred.makeNodeResolver());
+	return deferred.promise;
+}
+
+function getAllStats(year, callback) {
+			
 	var connection = mysql.createConnection({
 		host: config.mysql.hostname,
 		user: config.mysql.user,
@@ -38,55 +77,13 @@ app.get('/getstats', function(request, response) {
 		
 		d.run(function() {
 			
-			function doGetSchedulesAndWins() {
-				var deferred = Q.defer();
-				connection.query("select count(1) as wins, refName from schedules where year = " + year + " and pointsFor > pointsAgainst group by refName;",deferred.makeNodeResolver());
-				return deferred.promise;
-			}
-			
-			function doGetLosses() {
-				var deferred = Q.defer();
-				connection.query("select count(1) as losses, refName from schedules where year = " + year + " and pointsFor < pointsAgainst group by refName;",deferred.makeNodeResolver());
-				return deferred.promise;
-			}
-			
-			function doGetSchoolInfo() {
-				var deferred = Q.defer();
-				connection.query("select distinct s.refName, sc.displayName from schedules s inner join schools sc on s.refName = sc.refName where year = " + year + " order by refName;",deferred.makeNodeResolver());
-				return deferred.promise;
-			}
-			
-			function doGetOffensiveStats() {
-				var deferred = Q.defer();
-				connection.query("(select schoolRefName, 'pass' as stat, SUM(passYards) yards, SUM(passAttempts) attempts, COUNT(distinct s.gameId) games from passing p inner join schedules s on p.gameId = s.gameId where year = " + year + " and s.refName = p.schoolRefName group by schoolRefName) union all (select schoolRefName, 'rush' as stat, SUM(rushYards) yards, SUM(rushAttempts) attempts, COUNT(distinct s2.gameId) games from rushingreceiving r inner join schedules s2 on r.gameId = s2.gameId where year = " + year + " and s2.refName = r.schoolRefName group by schoolRefName);",deferred.makeNodeResolver());
-				return deferred.promise;
-			}
-			
-			function doGetDefensiveStats() {
-				var deferred = Q.defer();
-				connection.query("(select opponentRefName as schoolRefName, 'pass' as stat, SUM(passYards) yards, SUM(passAttempts) attempts, COUNT(distinct s.gameId) games from passing p inner join schedules s on p.gameId = s.gameId where year = " + year + " and s.refName = p.schoolRefName group by opponentRefName) union all (select opponentRefName as schoolRefName, 'rush' as stat, SUM(rushYards) yards, SUM(rushAttempts) attempts, COUNT(distinct s2.gameId) games from rushingreceiving r inner join schedules s2 on r.gameId = s2.gameId where year = " + year + " and s2.refName = r.schoolRefName group by opponentRefName);",deferred.makeNodeResolver());
-				return deferred.promise;
-			}
-			
-			function doGetAdjustedStats() {
-				var deferred = Q.defer();
-				connection.query("select * FROM adjusted WHERE (schoolRefName, year,statName, date) IN ( SELECT schoolRefName, year, statName, MAX(date) FROM adjusted where year = " + year + " group by schoolRefName, year, statName);",deferred.makeNodeResolver());
-				return deferred.promise;
-			}
-			
-			function doGetPoints() {
-				var deferred = Q.defer();
-				connection.query("select avg(pointsFor) as pointsFor, avg(pointsAgainst) as pointsAgainst, refName from schedules where year = " + year + " group by refName;",deferred.makeNodeResolver());
-				return deferred.promise;
-			}
-			
-			Q.all([doGetSchedulesAndWins(),
-					doGetLosses(),
-					doGetSchoolInfo(),
-					doGetOffensiveStats(),
-					doGetDefensiveStats(),
-					doGetAdjustedStats(),
-					doGetPoints()]).then(function(results){
+			Q.all([doGetSchedulesAndWins(connection, year),
+					doGetLosses(connection, year),
+					doGetSchoolInfo(connection, year),
+					doGetOffensiveStats(connection, year),
+					doGetDefensiveStats(connection, year),
+					doGetAdjustedStats(connection, year),
+					doGetPoints(connection, year)]).then(function(results){
 				
 				let wins = results[0][0];
 				let losses = results[1][0];
@@ -125,7 +122,8 @@ app.get('/getstats', function(request, response) {
 						rawOffensiveStats[rawStat.schoolRefName] = {
 							passYards: rawStat.yards,
 							passAttempts: rawStat.attempts,
-							games: rawStat.games
+							games: rawStat.games,
+							completions: rawStat.completions
 						};
 					}
 					else if (rawStat.stat === "rush") {
@@ -144,7 +142,8 @@ app.get('/getstats', function(request, response) {
 						rawDefensiveStats[rawStat.schoolRefName] = {
 							passYards: rawStat.yards,
 							passAttempts: rawStat.attempts,
-							games: rawStat.games
+							games: rawStat.games,
+							completions: rawStat.completions
 						};
 					}
 					else if (rawStat.stat === "rush") {
@@ -182,34 +181,42 @@ app.get('/getstats', function(request, response) {
 						let totalOffensivePlays = rawOffensiveStats[school].rushAttempts + rawOffensiveStats[school].passAttempts;
 						let totalDefensivePlays = rawDefensiveStats[school].rushAttempts + rawDefensiveStats[school].passAttempts;
 						let totalPlaysPerGame = (totalOffensivePlays + totalDefensivePlays) / (teamWinLoss[school].wins + teamWinLoss[school].losses);
+						let totalGames = (teamWinLoss[school].wins + teamWinLoss[school].losses);
 					
 						// meta properties
 						item.schoolRefName = school
 					
 						// teamName
 						item.teamName = schoolStats[school].displayName;
-						//TODO: wins
 						item.wins = teamWinLoss[school].wins;
-						//TODO: losses
 						item.losses = teamWinLoss[school].losses;
-						//predictedPPG
 						item.predictedPPG = (pointsScored[school].pointsFor).toFixed(2);
-						//predictedPPGAllowed
 						item.predictedPPGAllowed = (pointsScored[school].pointsAgainst).toFixed(2);
-						//adjYardsPPDiff
 						item.adjYardsPPDiff = (schoolStats[school].passYards - schoolStats[school].passYardsAllowed).toFixed(2);
-						//adjYardsPPOff
-						item.adjYardsPPOff = (schoolStats[school].passYards).toFixed(2);
-						//adjYardsPPDef
-						item.adjYardsPPDef = (schoolStats[school].passYardsAllowed).toFixed(2);
-						//rawYardsPPDiff
+						item.adjYardsPPOff = ((schoolStats[school].passYards * rawOffensiveStats[school].passAttempts / totalOffensivePlays) + (schoolStats[school].rushYards * rawOffensiveStats[school].rushAttempts / totalOffensivePlays)).toFixed(2);
+						item.adjYardsPPDef = ((schoolStats[school].passYardsAllowed * rawDefensiveStats[school].passAttempts / totalDefensivePlays) + (schoolStats[school].rushYardsAllowed * rawDefensiveStats[school].rushAttempts / totalDefensivePlays)).toFixed(2);
 						item.rawYardsPPDiff = rawYardsPerPlayDifferential;
-						//rawYardsPPOff
 						item.rawYardsPPOff = rawOffensiveYardsPerPlay;
-						//rawYardsPPDef
 						item.rawYardsPPDef = rawDefensiveYardsPerPlay;
-						//playsPerGame
 						item.playsPerGame = totalPlaysPerGame.toFixed(2);
+						item.pointsPerGame = (pointsScored[school].pointsFor).toFixed(2);
+						item.adjPassYards = (schoolStats[school].passYards).toFixed(2);
+						item.passYards = ((rawOffensiveStats[school].passYards) / (rawOffensiveStats[school].passAttempts)).toFixed(2);
+						item.passAttemptsPerGame = (rawOffensiveStats[school].passAttempts / totalGames).toFixed(2);
+						item.passCompletePct = (rawOffensiveStats[school].completions * 100 / rawOffensiveStats[school].passAttempts).toFixed(2);
+						item.adjRushYards = (schoolStats[school].rushYards).toFixed(2);
+						item.rushYards = ((rawOffensiveStats[school].rushYards) / (rawOffensiveStats[school].rushAttempts)).toFixed(2);
+						item.rushAttemptsPerGame = (rawOffensiveStats[school].rushAttempts / totalGames).toFixed(2);
+						
+						item.pointsPerGameAllowed = (pointsScored[school].pointsAgainst).toFixed(2);
+						item.adjPassYardsAllowed = (schoolStats[school].passYardsAllowed).toFixed(2);
+						item.passYardsAllowed = ((rawDefensiveStats[school].passYards) / (rawDefensiveStats[school].passAttempts)).toFixed(2);
+						item.passAttemptsPerGameAllowed = (rawDefensiveStats[school].passAttempts / totalGames).toFixed(2);
+						item.passCompletePctAllowed = (rawDefensiveStats[school].completions * 100 / rawDefensiveStats[school].passAttempts).toFixed(2);
+						item.adjRushYardsAllowed = (schoolStats[school].rushYardsAllowed).toFixed(2);
+						item.rushYardsAllowed = ((rawDefensiveStats[school].rushYards) / (rawOffensiveStats[school].rushAttempts)).toFixed(2);
+						item.rushAttemptsPerGameAllowed = (rawDefensiveStats[school].rushAttempts / totalGames).toFixed(2);
+						
 					}
 					catch (err) {
 						console.log(err);
@@ -217,10 +224,49 @@ app.get('/getstats', function(request, response) {
 					toReturn.push(item);
 				}
 
-				response.json({items: toReturn});
+				callback(toReturn);
 			});
 		})
 	})
+}
+
+app.get('/getoffensestats', function(request, response) {
+
+	let year = 2016;
+	if (!!request.query.year) {
+		year = parseInt(request.query.year, 10);
+	}
+	
+	getAllStats(year, function(toReturn){
+		response.json({items: toReturn});
+	});
+
+})
+
+app.get('/getstats', function(request, response) {
+	
+	let year = 2016;
+	if (!!request.query.year) {
+		year = parseInt(request.query.year, 10);
+	}
+	
+	getAllStats(year, function(toReturn){
+		response.json({items: toReturn});
+	});
+
+})
+
+app.get('/getdefensestats', function(request, response) {
+
+	let year = 2016;
+	if (!!request.query.year) {
+		year = parseInt(request.query.year, 10);
+	}
+	
+	getAllStats(year, function(toReturn){
+		response.json({items: toReturn});
+	});
+
 })
 
 app.get('*', function(request, response) {
